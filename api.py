@@ -1,13 +1,13 @@
-import os
-import json
+
 import io
 import json
+import os
 import traceback
 import urllib.error
 import urllib.request
-from typing import Optional
 
 import pandas as pd
+from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,22 +22,11 @@ from critic_agent import verify_experiments
 from feedback_agent import decide_next_action
 
 
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-
-OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-OLLAMA_MODEL = "llama3.2:3b"
-
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-20b"
 
 MAX_PIPELINE_ATTEMPTS = 3
 
-
-# ---------------------------------------------------------
-# FASTAPI APPLICATION
-# ---------------------------------------------------------
 
 app = FastAPI(
     title="Quality-Aware ML Pipeline API",
@@ -62,11 +51,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
-# ---------------------------------------------------------
-# AGENT CONFIGURATION
-# ---------------------------------------------------------
 
 AGENT_DESCRIPTIONS = {
     "dataset_profiler": (
@@ -202,19 +186,11 @@ Do not claim a retry occurred unless the attempt history confirms it.
 }
 
 
-# ---------------------------------------------------------
-# CHAT REQUEST MODEL
-# ---------------------------------------------------------
-
 class AgentChatRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=100)
     question: str = Field(min_length=1, max_length=4000)
     context: dict = Field(default_factory=dict)
 
-
-# ---------------------------------------------------------
-# GENERAL ENDPOINTS
-# ---------------------------------------------------------
 
 @app.get("/")
 def home():
@@ -232,10 +208,6 @@ def health_check():
         "max_pipeline_attempts": MAX_PIPELINE_ATTEMPTS,
     }
 
-
-# ---------------------------------------------------------
-# BEST-CANDIDATE HELPERS
-# ---------------------------------------------------------
 
 def _candidate_score(candidate):
     """Return a comparable candidate score, if available."""
@@ -278,7 +250,7 @@ def _update_best_candidate(current_best, candidate):
     current_metric, current_value = current_score
 
     if candidate_metric != current_metric:
-        # Metrics such as F1 and R2 must not be compared directly.
+        # F1 and R2, for example, must never be compared directly.
         return current_best
 
     if candidate_value > current_value:
@@ -291,13 +263,8 @@ def _attach_attempt_number(report, attempt_number):
     """Add attempt metadata without changing existing report fields."""
     if isinstance(report, dict):
         report["attempt_number"] = attempt_number
-
     return report
 
-
-# ---------------------------------------------------------
-# DATASET ANALYSIS AND ADAPTIVE RETRY ENDPOINT
-# ---------------------------------------------------------
 
 @app.post("/api/analyze")
 async def analyze_dataset(
@@ -305,20 +272,11 @@ async def analyze_dataset(
     target_column: str = Form(...),
     acceptance_threshold: Optional[float] = Form(None),
 ):
-    # Validate the uploaded file.
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=400,
             detail="Please upload a CSV file.",
         )
-
-    # The optional threshold must be a valid F1 or R2 threshold.
-    if acceptance_threshold is not None:
-        if not 0.0 <= acceptance_threshold <= 1.0:
-            raise HTTPException(
-                status_code=400,
-                detail="acceptance_threshold must be between 0 and 1.",
-            )
 
     try:
         contents = await file.read()
@@ -343,12 +301,6 @@ async def analyze_dataset(
                 detail="The dataset needs at least two columns.",
             )
 
-        if df.columns.duplicated().any():
-            raise HTTPException(
-                status_code=400,
-                detail="The dataset contains duplicate column names.",
-            )
-
         if target_column not in df.columns:
             raise HTTPException(
                 status_code=400,
@@ -361,7 +313,7 @@ async def analyze_dataset(
         # Agent 1: Dataset profiling.
         profile = profile_dataset(df)
 
-        # Agent 2: Data-quality assessment.
+        # Agent 2: Quality assessment.
         quality = analyze_quality(df)
 
         # Agent 3: Impact assessment.
@@ -379,11 +331,9 @@ async def analyze_dataset(
         verification_report = None
         feedback_report = None
 
-        # Run no more than MAX_PIPELINE_ATTEMPTS attempts.
-        for attempt_number in range(
-            1,
-            MAX_PIPELINE_ATTEMPTS + 1,
-        ):
+        # Run the pipeline at most MAX_PIPELINE_ATTEMPTS times.
+        for attempt_number in range(1, MAX_PIPELINE_ATTEMPTS + 1):
+
             # Agent 4: Plan the initial or alternative pipeline.
             plan = plan_pipeline(
                 df=df,
@@ -408,9 +358,9 @@ async def analyze_dataset(
                     "Pipeline planner returned an invalid target column."
                 )
 
-            if problem_type not in {"classification", "regression"}:
+            if not problem_type:
                 raise RuntimeError(
-                    "Pipeline planner returned an unsupported problem type."
+                    "Pipeline planner did not return a problem type."
                 )
 
             # Agent 5: Execute this attempt's experiments.
@@ -432,30 +382,20 @@ async def analyze_dataset(
                 attempt_number,
             )
 
-            # Build the optional acceptance criteria for Agent 6.
-            acceptance_criteria = None
-
-            if acceptance_threshold is not None:
-                if problem_type == "classification":
-                    acceptance_criteria = {
-                        "classification": {
-                            "f1_macro": acceptance_threshold,
-                        }
-                    }
-                else:
-                    acceptance_criteria = {
-                        "regression": {
-                            "r2": acceptance_threshold,
-                        }
-                    }
-
-            # Agent 6: Critic / verification.
+            # Agent 6: Verify metrics and acceptance criteria.
             verification_report = verify_experiments(
                 experiment_report=experiment_report,
                 quality_report=quality,
                 impact_report=impact,
                 pipeline_plan=plan,
-                acceptance_criteria=acceptance_criteria,
+                acceptance_criteria=(
+                    {
+                        "classification": {"f1_macro": acceptance_threshold},
+                        "regression": {"r2": acceptance_threshold},
+                    }
+                    if acceptance_threshold is not None
+                    else None
+                ),
             )
 
             if not isinstance(verification_report, dict):
@@ -468,7 +408,7 @@ async def analyze_dataset(
                 attempt_number,
             )
 
-            # Track the best candidate across attempts.
+            # Track the best candidate across all attempts.
             candidate = verification_report.get("best_candidate")
 
             if isinstance(candidate, dict):
@@ -480,7 +420,7 @@ async def analyze_dataset(
                     candidate,
                 )
 
-            # Agent 7: Decide the next action.
+            # Agent 7: Decide what should happen next.
             feedback_report = decide_next_action(
                 verification_report=verification_report,
                 quality_report=quality,
@@ -497,7 +437,7 @@ async def analyze_dataset(
                 attempt_number,
             )
 
-            # Save every attempt for the frontend and later planning.
+            # Record every attempt so the frontend can display history.
             attempt_history.append({
                 "attempt_number": attempt_number,
                 "pipeline_plan": plan,
@@ -506,10 +446,11 @@ async def analyze_dataset(
                 "feedback_report": feedback_report,
             })
 
+            # Supply previous evidence to the next planner.
             previous_experiment_reports.append(experiment_report)
             previous_verification_report = verification_report
 
-            # Stop if the critic explicitly confirms acceptance.
+            # Stop if acceptance is explicitly confirmed.
             if (
                 verification_report.get("status")
                 == "PROVISIONALLY_ACCEPTED"
@@ -517,11 +458,11 @@ async def analyze_dataset(
             ):
                 break
 
-            # Stop if the configured attempt limit is reached.
+            # No more attempts after reaching the configured limit.
             if attempt_number >= MAX_PIPELINE_ATTEMPTS:
                 break
 
-            # Retry only if verification or feedback recommends it.
+            # Retry only when an agent recommends further experiments.
             retry_recommended = (
                 verification_report.get("retry_recommended") is True
                 or feedback_report.get("requires_experiment") is True
@@ -546,7 +487,7 @@ async def analyze_dataset(
             )
         )
 
-        # Attach overall workflow metadata to the final verification report.
+        # Add workflow-level metadata to the final reports.
         verification_report["best_candidate_overall"] = (
             best_candidate_overall
         )
@@ -570,12 +511,10 @@ async def analyze_dataset(
                 "max_attempts": MAX_PIPELINE_ATTEMPTS,
                 "best_candidate_overall": best_candidate_overall,
                 "unresolved_findings": verification_report.get(
-                    "findings",
-                    [],
+                    "findings", []
                 ),
                 "critic_recommendations": verification_report.get(
-                    "recommendations",
-                    [],
+                    "recommendations", []
                 ),
             }
         else:
@@ -586,7 +525,6 @@ async def analyze_dataset(
                 best_candidate_overall
             )
 
-        # Final response retains the original report fields.
         response = {
             "dataset": {
                 "filename": file.filename,
@@ -634,10 +572,6 @@ async def analyze_dataset(
             ),
         )
 
-
-# ---------------------------------------------------------
-# CHAT WITH THE SEVEN AGENTS USING LOCAL OLLAMA
-# ---------------------------------------------------------
 
 @app.post("/api/chat")
 async def chat_with_agent(request: AgentChatRequest):
@@ -726,6 +660,7 @@ ANSWER STYLE:
 - Include actual values when available.
 - Avoid unrelated dataset summaries.
 """
+
     payload = {
         "model": GROQ_MODEL,
         "stream": False,
@@ -749,20 +684,17 @@ ANSWER STYLE:
     }
 
     try:
-        encoded_payload = json.dumps(payload).encode("utf-8")
-        groq_api_key = os.getenv("GROQ_API_KEY")
-
-        print(
-            "Groq API key diagnostic:",
-            "present" if groq_api_key and groq_api_key.strip() else "missing or empty",
-        )
-
-        if not groq_api_key or not groq_api_key.strip():
+        groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+        if not groq_api_key:
             raise HTTPException(
                 status_code=500,
-                detail="GROQ_API_KEY is missing or empty in the running backend.",
+                detail=(
+                    "GROQ_API_KEY is missing or empty in the running backend. "
+                    "Check the Environment settings for this Render service."
+                ),
             )
 
+        encoded_payload = json.dumps(payload).encode("utf-8")
         http_request = urllib.request.Request(
             GROQ_URL,
             data=encoded_payload,
@@ -773,10 +705,7 @@ ANSWER STYLE:
             method="POST",
         )
 
-        with urllib.request.urlopen(
-            http_request,
-            timeout=180,
-        ) as groq_http_response:
+        with urllib.request.urlopen(http_request, timeout=120) as groq_http_response:
             groq_response = json.loads(
                 groq_http_response.read().decode("utf-8")
             )
@@ -788,7 +717,7 @@ ANSWER STYLE:
             else ""
         )
 
-        if not answer or not answer.strip():
+        if not isinstance(answer, str) or not answer.strip():
             raise HTTPException(
                 status_code=502,
                 detail="Groq returned an empty answer.",
@@ -804,34 +733,26 @@ ANSWER STYLE:
 
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
-        print("Groq HTTP error:", exc.code, error_body)
-
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Groq API returned HTTP {exc.code}. "
-                "Check your API key, model availability, and usage limits."
-            ),
-        )
+        # Do not print request headers or the API key.
+        print("Groq HTTP error:", exc.code, error_body[:2000])
+        if exc.code in (401, 403):
+            detail = "Groq rejected the API key or its permissions (HTTP authentication error). Check GROQ_API_KEY in Render."
+        elif exc.code == 429:
+            detail = "Groq rate limit or usage limit reached. Check your Groq account limits and try again later."
+        else:
+            detail = f"Groq API returned HTTP {exc.code}. Check the Render logs for the response details."
+        raise HTTPException(status_code=502, detail=detail)
 
     except (urllib.error.URLError, TimeoutError) as exc:
         print("Groq connection error:", str(exc))
-
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Cannot connect to the Groq API. "
-                "Please try again later."
-            ),
+            detail="Cannot connect to the Groq API right now. Please try again later.",
         )
 
     except Exception as exc:
         traceback.print_exc()
-
         raise HTTPException(
             status_code=502,
-            detail=(
-                f"Remote chatbot failed: "
-                f"{type(exc).__name__}: {str(exc)}"
-            ),
+            detail=f"Remote chatbot failed: {type(exc).__name__}: {str(exc)}",
         )
