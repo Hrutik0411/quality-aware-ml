@@ -1,4 +1,5 @@
-
+import os
+import json
 import io
 import json
 import traceback
@@ -27,6 +28,9 @@ from feedback_agent import decide_next_action
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 OLLAMA_MODEL = "llama3.2:3b"
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 MAX_PIPELINE_ATTEMPTS = 3
 
@@ -723,55 +727,69 @@ ANSWER STYLE:
 - Avoid unrelated dataset summaries.
 """
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "stream": False,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Use the following workflow context to answer the "
-                    "question. The primary report belongs to the selected "
-                    "agent; other reports provide supporting evidence.\n\n"
-                    f"Workflow context:\n{context_text}\n\n"
-                    f"User question:\n{request.question.strip()}"
-                ),
-            },
-        ],
-        "options": {
-            "temperature": 0.2,
+   payload = {
+    "model": GROQ_MODEL,
+    "stream": False,
+    "messages": [
+        {
+            "role": "system",
+            "content": system_prompt,
         },
-    }
+        {
+            "role": "user",
+            "content": (
+                "Use the following workflow context to answer the "
+                "question. The primary report belongs to the selected "
+                "agent; other reports provide supporting evidence.\n\n"
+                f"Workflow context:\n{context_text}\n\n"
+                f"User question:\n{request.question.strip()}"
+            ),
+        },
+    ],
+    "temperature": 0.2,
+}
 
     try:
         encoded_payload = json.dumps(payload).encode("utf-8")
 
+       ```python
+        groq_api_key = os.getenv("GROQ_API_KEY")
+
+        if not groq_api_key:
+            raise HTTPException(
+                status_code=500,
+                detail="GROQ_API_KEY is not configured on the backend.",
+            )
+
         http_request = urllib.request.Request(
-            OLLAMA_URL,
+            GROQ_URL,
             data=encoded_payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {groq_api_key}",
+            },
             method="POST",
         )
 
-        # Ollama runs locally; no external API key is required.
         with urllib.request.urlopen(
             http_request,
             timeout=180,
-        ) as ollama_http_response:
-            ollama_response = json.loads(
-                ollama_http_response.read().decode("utf-8")
+        ) as groq_http_response:
+            groq_response = json.loads(
+                groq_http_response.read().decode("utf-8")
             )
 
-        answer = ollama_response.get("message", {}).get("content", "")
+        choices = groq_response.get("choices", [])
+        answer = (
+            choices[0].get("message", {}).get("content", "")
+            if choices
+            else ""
+        )
 
-        if not answer.strip():
+        if not answer or not answer.strip():
             raise HTTPException(
                 status_code=502,
-                detail="Ollama returned an empty answer.",
+                detail="Groq returned an empty answer.",
             )
 
         return {
@@ -784,24 +802,24 @@ ANSWER STYLE:
 
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
-        print("Ollama HTTP error:", exc.code, error_body)
+        print("Groq HTTP error:", exc.code, error_body)
 
         raise HTTPException(
             status_code=502,
             detail=(
-                "Ollama returned an error. Check that the model "
-                f"'{OLLAMA_MODEL}' is installed and available."
+                f"Groq API returned HTTP {exc.code}. "
+                "Check your API key, model availability, and usage limits."
             ),
         )
 
     except (urllib.error.URLError, TimeoutError) as exc:
-        print("Ollama connection error:", str(exc))
+        print("Groq connection error:", str(exc))
 
         raise HTTPException(
             status_code=503,
             detail=(
-                "Cannot connect to Ollama at 127.0.0.1:11434. "
-                "Make sure Ollama is running on your computer."
+                "Cannot connect to the Groq API. "
+                "Please try again later."
             ),
         )
 
@@ -811,7 +829,8 @@ ANSWER STYLE:
         raise HTTPException(
             status_code=502,
             detail=(
-                f"Local chatbot failed: "
+                f"Remote chatbot failed: "
                 f"{type(exc).__name__}: {str(exc)}"
             ),
         )
+```
