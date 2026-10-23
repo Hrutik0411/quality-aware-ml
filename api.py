@@ -726,33 +726,31 @@ ANSWER STYLE:
 - Include actual values when available.
 - Avoid unrelated dataset summaries.
 """
-
-   payload = {
-    "model": GROQ_MODEL,
-    "stream": False,
-    "messages": [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {
-            "role": "user",
-            "content": (
-                "Use the following workflow context to answer the "
-                "question. The primary report belongs to the selected "
-                "agent; other reports provide supporting evidence.\n\n"
-                f"Workflow context:\n{context_text}\n\n"
-                f"User question:\n{request.question.strip()}"
-            ),
-        },
-    ],
-    "temperature": 0.2,
-}
+    payload = {
+        "model": GROQ_MODEL,
+        "stream": False,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Use the following workflow context to answer the "
+                    "question. The primary report belongs to the selected "
+                    "agent; other reports provide supporting evidence.\n\n"
+                    f"Workflow context:\n{context_text}\n\n"
+                    f"User question:\n{request.question.strip()}"
+                ),
+            },
+        ],
+        "temperature": 0.2,
+    }
 
     try:
         encoded_payload = json.dumps(payload).encode("utf-8")
 
-       ```python
         groq_api_key = os.getenv("GROQ_API_KEY")
 
         if not groq_api_key:
@@ -833,4 +831,3 @@ ANSWER STYLE:
                 f"{type(exc).__name__}: {str(exc)}"
             ),
         )
-```
