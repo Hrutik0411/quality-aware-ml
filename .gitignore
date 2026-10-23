@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and build
+frontend/node_modules/
+frontend/dist/
+
+# Local data and model artifacts
+*.joblib
+*.pkl
+*.pickle
+
+# Editor and operating system files
+.vscode/
+.DS_Store
+Thumbs.db
+classification_test.csv
