@@ -32,7 +32,7 @@ import {
 import "./App.css";
 
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "https://quality-aware-ml.onrender.com";
 
 const CLASSIFICATION_METRICS = [
   { label: "Accuracy", key: "Accuracy", cvKey: "accuracy", higher: true },
@@ -448,7 +448,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="status-dot" />
           <span>ML backend configured</span>
-          <p>API: 127.0.0.1:8000</p>
+         <p>API: {API_URL}</p>
         </div>
       </aside>
 
