@@ -446,10 +446,10 @@ function App() {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="status-dot" />
-          <span>ML backend configured</span>
-         <p>API: {API_URL}</p>
-        </div>
+  <div className="status-dot" />
+  <span>ML backend configured</span>
+  <p>API: {API_URL}</p>
+</div>
       </aside>
 
       <main className="main-content">
@@ -560,7 +560,7 @@ function App() {
             </button>
 
             <p className="control-note">
-              Your file is sent to your local FastAPI backend for analysis.
+              Your file is sent to the deployed FastAPI backend for analysis.
             </p>
           </div>
         </section>
