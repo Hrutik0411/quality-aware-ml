@@ -750,13 +750,17 @@ ANSWER STYLE:
 
     try:
         encoded_payload = json.dumps(payload).encode("utf-8")
-
         groq_api_key = os.getenv("GROQ_API_KEY")
 
-        if not groq_api_key:
+        print(
+            "Groq API key diagnostic:",
+            "present" if groq_api_key and groq_api_key.strip() else "missing or empty",
+        )
+
+        if not groq_api_key or not groq_api_key.strip():
             raise HTTPException(
                 status_code=500,
-                detail="GROQ_API_KEY is not configured on the backend.",
+                detail="GROQ_API_KEY is missing or empty in the running backend.",
             )
 
         http_request = urllib.request.Request(
