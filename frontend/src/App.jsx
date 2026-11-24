@@ -292,6 +292,7 @@ function App() {
   const dataset = result?.dataset;
   const profile = result?.profile;
   const quality = result?.quality_report;
+  console.log("CHATBOT QUALITY REPORT:", result?.quality_report);
   const impact = result?.impact_report;
   const plan = result?.pipeline_plan;
   const experiments = result?.experiment_report;
